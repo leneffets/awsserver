@@ -141,3 +141,8 @@ This project uses GitHub Actions for continuous integration. The pipeline is def
 ## Contribution
 
 Feel free to fork this repository and create pull requests. For major changes, please open an issue first to discuss what you would like to change.
+
+## License
+
+This project is licensed under the MIT License.
+
