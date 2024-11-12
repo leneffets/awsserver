@@ -23,7 +23,7 @@ jobs:
         run: go mod tidy
 
       - name: Build
-        run: go build -v -o ssmserver ./...
+        run: go build -o ./output/ssmserver ./cmd/server
 
       - name: Run tests
         run: go test -v ./...
@@ -32,4 +32,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ssmserver
-          path: ssmserver
+          path: ./output/ssmserver
