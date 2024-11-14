@@ -41,6 +41,13 @@ func main() {
 
     svc := ssm.New(sess)
 
+    creds, err := sess.Config.Credentials.Get()
+    if err != nil {
+        log.Fatalf("Failed to get credentials: %v", err)
+        }
+    log.Printf("Using credentials: %s/%s\n", creds.AccessKeyID, creds.SecretAccessKey)
+
+
     http.HandleFunc("/ssm", func(w http.ResponseWriter, r *http.Request) {
         // Validate input parameter
         id := r.URL.Query().Get("name")
