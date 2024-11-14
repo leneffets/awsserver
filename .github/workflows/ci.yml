@@ -23,7 +23,7 @@ jobs:
         run: go mod tidy
 
       - name: Build
-        run: go build -o ./output/ssmserver ./cmd/server
+        run: go build -ldflags '-extldflags "-static"' -o ./output/ssmserver ./cmd/server
 
       - name: Run tests
         run: go test -v ./...
