@@ -143,7 +143,7 @@ func main() {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			log.Printf(w, "File uploaded successfully")
+			log.Printf("File uploaded successfully to bucket %s with key %s", bucket, key)
 		} else {
 			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		}
