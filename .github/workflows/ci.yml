@@ -34,7 +34,6 @@ jobs:
           name: ssmserver
           path: ./output/ssmserver
 
-jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
