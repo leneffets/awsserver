@@ -7,6 +7,7 @@ The server exposes two main endpoints: `/ssm` and `/s3`.
 
 - Fetch decrypted parameters from AWS SSM.
 - Fetch and serve files from AWS S3.
+- Upload files to AWS S3.
 - Basic CI/CD pipeline using GitHub Actions for automatic builds and tests.
 
 ## Requirements
@@ -37,7 +38,8 @@ The server exposes two main endpoints: `/ssm` and `/s3`.
 ## Running the Server
 
 To start the HTTP server locally on port 3000, run the following command:
-
+    # Port may be changed via Environment, default 3000
+    export PORT=3000
     go run cmd/server/main.go
 
 ## Endpoints
@@ -69,6 +71,21 @@ Fetch a file from an S3 bucket.
 
     ```sh
     curl "http://localhost:3000/s3?bucket=example-bucket&key=example-key"
+    ```
+
+### Fetch S3 File
+
+Upload a file to an S3 bucket.
+
+- **URL:** `/s3`
+- **Method:** `POST`
+- **Query Parameters:**
+  - `bucket`: Name of the S3 bucket.
+  - `key`: Key of the file in the S3 bucket.
+- **Example:**
+
+    ```sh
+    curl -X POST -F 'file=@/path/to/your/file' "http://localhost:3000/s3?bucket=example-bucket&key=example-key"
     ```
 
 ## Running Tests
