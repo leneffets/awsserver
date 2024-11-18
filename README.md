@@ -1,6 +1,6 @@
 # SSM and S3 Server
 
-This project provides an HTTP server using Go, which interacts with AWS Systems Manager (SSM) to fetch parameters and with S3 to fetch files. This project is useful for running a sidecar, to use original images without a hassle.
+This project provides an HTTP server using Go, which interacts with AWS Systems Manager (SSM) to fetch/put parameters and with S3 to fetch/put files. This project is useful for running a sidecar, to use original images without a hassle.
 The server exposes two main endpoints: `/ssm` and `/s3`.
 
 ## Features
@@ -58,6 +58,22 @@ Fetch a decrypted parameter from AWS SSM.
     curl "http://localhost:3000/ssm?name=example_parameter"
     ```
 
+### Put SSM Parameter
+
+Put a parameter to AWS SSM.
+
+- **URL:** `/ssm`
+- **Method:** `POST`
+- **Query Parameters:**
+  - `name`: Name of the SSM parameter to put.
+  - `value`: Value of the SSM parameter to put.
+  - `type`: Type of the SSM parameter to put. (String, SecureString)
+- **Example:**
+
+    ```sh
+    curl -X POST -d "name=/path/to/parameter&value=somevalue&type=String" http://localhost:3000/ssm
+    ```
+
 ### Fetch S3 File
 
 Fetch a file from an S3 bucket.
@@ -73,7 +89,7 @@ Fetch a file from an S3 bucket.
     curl "http://localhost:3000/s3?bucket=example-bucket&key=example-key"
     ```
 
-### Fetch S3 File
+### Upload S3 File
 
 Upload a file to an S3 bucket.
 
