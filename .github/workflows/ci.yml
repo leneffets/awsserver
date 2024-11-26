@@ -1,4 +1,4 @@
-name: SSM Server CI
+name: Build latest Pipeline
 
 on:
   push:
