@@ -58,5 +58,4 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/ssmserver:latest
             ghcr.io/${{ github.repository_owner }}/ssmserver:${{ github.ref_name }}
