@@ -16,6 +16,14 @@ The server exposes two main endpoints: `/ssm` and `/s3`.
 - AWS CLI configured with necessary permissions
 - Git installed
 
+## Container Image
+
+Get the Container Image:
+   ```sh
+    docker pull ghcr.io/leneffets/ssmserver:v1.0.0 #check for releases
+    docker pull ghcr.io/leneffets/ssmserver:latest
+    ```
+
 ## Setup
 
 1. **Clone the repository:**
@@ -38,9 +46,11 @@ The server exposes two main endpoints: `/ssm` and `/s3`.
 ## Running the Server
 
 To start the HTTP server locally on port 3000, run the following command:
+    ```sh
     # Port may be changed via Environment, default 3000
     export PORT=3000
     go run cmd/server/main.go
+    ```
 
 ## Endpoints
 
