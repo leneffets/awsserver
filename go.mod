@@ -1,4 +1,4 @@
-module github.com/devstek/ssmserver
+module github.com/leneffets/ssmserver
 
 go 1.22.7
 
