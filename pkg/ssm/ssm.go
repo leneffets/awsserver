@@ -35,7 +35,7 @@ func HandleSSM(w http.ResponseWriter, r *http.Request, sess *session.Session) {
 	if r.Method == http.MethodGet {
 		handleGetSSM(w, r, svc)
 	} else if r.Method == http.MethodPost {
-		handlePostSSM(w, r, svc)
+		HandlePostSSM(w, r, svc)
 	} else {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 	}
@@ -62,7 +62,7 @@ func handleGetSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
 	w.Write([]byte(*results.Parameter.Value))
 }
 
-func handlePostSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
+func HandlePostSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		log.Printf("Invalid form data: %v", err)
