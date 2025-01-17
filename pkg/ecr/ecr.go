@@ -2,9 +2,10 @@ package ecr
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/base64"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -32,10 +33,31 @@ func HandleECRLogin(w http.ResponseWriter, r *http.Request, sess *session.Sessio
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	if len(results.AuthorizationData) == 0 {
+		http.Error(w, "No authorization data found", http.StatusInternalServerError)
+		return
+	}
+
+	authData := results.AuthorizationData[0]
+	decodedToken, err := base64.StdEncoding.DecodeString(*authData.AuthorizationToken)
+	if err != nil {
+		log.Printf("Error decoding authorization token: %v", err)
+		http.Error(w, "Error decoding authorization token", http.StatusInternalServerError)
+		return
+	}
+
+	tokenParts := strings.SplitN(string(decodedToken), ":", 2)
+	if len(tokenParts) != 2 {
+		http.Error(w, "Invalid authorization token format", http.StatusInternalServerError)
+		return
+	}
+
+	password := tokenParts[1]
+
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(results); err != nil {
-		http.Error(w, "Error encoding response", http.StatusInternalServerError)
-		log.Printf("Error encoding response: %v", err)
+	if _, err := w.Write([]byte(password)); err != nil {
+		http.Error(w, "Error writing response", http.StatusInternalServerError)
+		log.Printf("Error writing response: %v", err)
 	}
 }
