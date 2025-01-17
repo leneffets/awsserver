@@ -9,6 +9,7 @@ import (
 	"github.com/leneffets/ssmserver/pkg/ecr"
 	"github.com/leneffets/ssmserver/pkg/s3"
 	"github.com/leneffets/ssmserver/pkg/ssm"
+	"github.com/leneffets/ssmserver/pkg/sts"
 )
 
 func main() {
@@ -26,6 +27,10 @@ func main() {
 
 	http.HandleFunc("/ecr/login", func(w http.ResponseWriter, r *http.Request) {
 		ecr.HandleECRLogin(w, r, sess)
+	})
+
+	http.HandleFunc("/sts", func(w http.ResponseWriter, r *http.Request) {
+		sts.HandleSTS(w, r, sess)
 	})
 
 	port := os.Getenv("PORT")
