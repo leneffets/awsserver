@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -13,8 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"reflect"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/ssm"
@@ -51,6 +56,17 @@ func (m *MockS3API) GetObjectWithContext(ctx context.Context, input *s3.GetObjec
 
 func (m *MockS3API) PutObjectWithContext(ctx context.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error) {
 	return &s3.PutObjectOutput{}, m.Err
+}
+
+// MockECRAPI for testing
+type MockECRAPI struct {
+	ecriface.ECRAPI
+	Response ecr.GetAuthorizationTokenOutput
+	Err      error
+}
+
+func (m *MockECRAPI) GetAuthorizationTokenWithContext(ctx context.Context, input *ecr.GetAuthorizationTokenInput, opts ...request.Option) (*ecr.GetAuthorizationTokenOutput, error) {
+	return &m.Response, m.Err
 }
 
 func TestGetParameter(t *testing.T) {
@@ -222,6 +238,64 @@ func TestPutToS3(t *testing.T) {
 
 	if status := rr.Code; status != http.StatusOK {
 		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+}
+
+func TestGetECRLogin(t *testing.T) {
+	mockECR := &MockECRAPI{
+		Response: ecr.GetAuthorizationTokenOutput{
+			AuthorizationData: []*ecr.AuthorizationData{
+				{
+					AuthorizationToken: aws.String("mock_token"),
+					ProxyEndpoint:      aws.String("https://mock_endpoint"),
+				},
+			},
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/ecr/login", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := mockECR.GetAuthorizationTokenWithContext(ctx, &ecr.GetAuthorizationTokenInput{})
+		if err != nil {
+			http.Error(w, "Error fetching ECR authorization token", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	})
+
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	expected := ecr.GetAuthorizationTokenOutput{
+		AuthorizationData: []*ecr.AuthorizationData{
+			{
+				AuthorizationToken: aws.String("mock_token"),
+				ProxyEndpoint:      aws.String("https://mock_endpoint"),
+				ExpiresAt:          nil,
+			},
+		},
+	}
+
+	var actual ecr.GetAuthorizationTokenOutput
+	if err := json.Unmarshal(rr.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("Failed to unmarshal response body: %v", err)
+	}
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Handler returned unexpected body: got %v want %v", actual, expected)
 	}
 }
 
