@@ -24,6 +24,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
+	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go/service/sts/stsiface"
 	ssmpkg "github.com/leneffets/ssmserver/pkg/ssm"
 )
 
@@ -66,6 +68,17 @@ type MockECRAPI struct {
 }
 
 func (m *MockECRAPI) GetAuthorizationTokenWithContext(ctx context.Context, input *ecr.GetAuthorizationTokenInput, opts ...request.Option) (*ecr.GetAuthorizationTokenOutput, error) {
+	return &m.Response, m.Err
+}
+
+// MockSTSAPI for testing
+type MockSTSAPI struct {
+	stsiface.STSAPI
+	Response sts.GetCallerIdentityOutput
+	Err      error
+}
+
+func (m *MockSTSAPI) GetCallerIdentityWithContext(ctx context.Context, input *sts.GetCallerIdentityInput, opts ...request.Option) (*sts.GetCallerIdentityOutput, error) {
 	return &m.Response, m.Err
 }
 
@@ -290,6 +303,57 @@ func TestGetECRLogin(t *testing.T) {
 	}
 
 	var actual ecr.GetAuthorizationTokenOutput
+	if err := json.Unmarshal(rr.Body.Bytes(), &actual); err != nil {
+		t.Fatalf("Failed to unmarshal response body: %v", err)
+	}
+
+	if !reflect.DeepEqual(actual, expected) {
+		t.Errorf("Handler returned unexpected body: got %v want %v", actual, expected)
+	}
+}
+
+func TestGetCallerIdentity(t *testing.T) {
+	mockSTS := &MockSTSAPI{
+		Response: sts.GetCallerIdentityOutput{
+			Account: aws.String("mock_account"),
+			Arn:     aws.String("mock_arn"),
+			UserId:  aws.String("mock_user_id"),
+		},
+	}
+
+	req, err := http.NewRequest("GET", "/sts", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		result, err := mockSTS.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+		if err != nil {
+			http.Error(w, "Error fetching caller identity", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	})
+
+	handler.ServeHTTP(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	}
+
+	expected := sts.GetCallerIdentityOutput{
+		Account: aws.String("mock_account"),
+		Arn:     aws.String("mock_arn"),
+		UserId:  aws.String("mock_user_id"),
+	}
+
+	var actual sts.GetCallerIdentityOutput
 	if err := json.Unmarshal(rr.Body.Bytes(), &actual); err != nil {
 		t.Fatalf("Failed to unmarshal response body: %v", err)
 	}
