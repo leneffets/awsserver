@@ -1,13 +1,14 @@
-# SSM and S3 Server
+# AWS Server
 
-This project provides an HTTP server using Go, which interacts with AWS Systems Manager (SSM) to fetch/put parameters and with S3 to fetch/put files. This project is useful for running a sidecar, to use original images without a hassle.
-The server exposes two main endpoints: `/ssm` and `/s3`.
+This project provides an HTTP server using Go, which interacts with AWS Services. This project is useful for running a sidecar, to use original images without a hassle.
 
 ## Features
 
 - Fetch decrypted parameters from AWS SSM.
 - Fetch and serve files from AWS S3.
 - Upload files to AWS S3.
+- Fetch ECR authorization token.
+- Fetch caller identity from AWS STS.
 - Basic CI/CD pipeline using GitHub Actions for automatic builds and tests.
 
 ## Requirements
@@ -113,6 +114,30 @@ Upload a file to an S3 bucket.
 
     ```sh
     curl -X POST -F 'file=@/path/to/your/file' "http://localhost:3000/s3?bucket=example-bucket&key=example-key"
+    ```
+
+### Get ECR Login
+
+Fetch an authorization token for ECR.
+
+- **URL:** `/ecr/login`
+- **Method:** `GET`
+- **Example:**
+
+    ```sh
+    curl "http://localhost:3000/ecr/login" |  docker login --username AWS --password-stdin aws-account-id.dkr.ecr.eu-central-1.amazonaws.com
+    ```
+
+### Get Caller Identity
+
+Fetch the caller identity from AWS STS.
+
+- **URL:** `/sts`
+- **Method:** `GET`
+- **Example:**
+
+    ```sh
+    curl "http://localhost:3000/sts"
     ```
 
 ## Running Tests
