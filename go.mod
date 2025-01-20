@@ -1,4 +1,4 @@
-module github.com/leneffets/ssmserver
+module github.com/leneffets/awsserver
 
 go 1.22.7
 

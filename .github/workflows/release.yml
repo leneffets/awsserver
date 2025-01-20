@@ -22,7 +22,7 @@ jobs:
         run: go mod tidy
 
       - name: Build Binary
-        run: CGO_ENABLED=0 go build -ldflags '-extldflags "-static"' -o ./output/ssmserver ./cmd/server
+        run: CGO_ENABLED=0 go build -ldflags '-extldflags "-static"' -o ./output/awsserver ./cmd/server
 
       - name: Get build architecture
         id: arch
@@ -32,8 +32,8 @@ jobs:
         run: |
           mkdir -p release
           ARCH=${{ env.ARCH }}
-          TAR_NAME="ssmserver-linux-${ARCH}.tar.gz"
-          tar -czvf release/${TAR_NAME} -C ./output ssmserver
+          TAR_NAME="awsserver-linux-${ARCH}.tar.gz"
+          tar -czvf release/${TAR_NAME} -C ./output awsserver
           echo "RELEASE_FILE=release/${TAR_NAME}" >> $GITHUB_ENV
 
       - name: Create GitHub Release
@@ -50,10 +50,10 @@ jobs:
             - Static binary for Linux architecture is available as a tar.gz archive.
             - Docker image is available on GitHub Packages.
 
-            **Download Binary:** [ssmserver-${{ env.ARCH }}](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ssmserver-linux-${{ env.ARCH }}.tar.gz)
+            **Download Binary:** [awsserver-${{ env.ARCH }}](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/awsserver-linux-${{ env.ARCH }}.tar.gz)
 
             **Docker Image:**  
-            `docker pull ghcr.io/${{ github.repository_owner }}/ssmserver:${{ github.ref_name }}`
+            `docker pull ghcr.io/${{ github.repository_owner }}/awsserver:${{ github.ref_name }}`
 
             Enjoy!
 
@@ -75,4 +75,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/ssmserver:${{ github.ref_name }}
+          tags: ghcr.io/${{ github.repository_owner }}/awsserver:${{ github.ref_name }}

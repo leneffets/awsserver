@@ -6,10 +6,10 @@ import (
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/leneffets/ssmserver/pkg/ecr"
-	"github.com/leneffets/ssmserver/pkg/s3"
-	"github.com/leneffets/ssmserver/pkg/ssm"
-	"github.com/leneffets/ssmserver/pkg/sts"
+	"github.com/leneffets/awsserver/pkg/ecr"
+	"github.com/leneffets/awsserver/pkg/s3"
+	"github.com/leneffets/awsserver/pkg/ssm"
+	"github.com/leneffets/awsserver/pkg/sts"
 )
 
 func main() {

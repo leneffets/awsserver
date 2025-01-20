@@ -26,7 +26,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/aws/aws-sdk-go/service/sts/stsiface"
-	ssmpkg "github.com/leneffets/ssmserver/pkg/ssm"
+	ssmpkg "github.com/leneffets/awsserver/pkg/ssm"
 )
 
 // MockSSMAPI for testing

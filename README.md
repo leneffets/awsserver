@@ -22,8 +22,8 @@ This project provides an HTTP server using Go, which interacts with AWS Services
 Get the Container Image
 
    ```sh
-   docker pull ghcr.io/leneffets/ssmserver:v1.0.0
-   docker pull ghcr.io/leneffets/ssmserver:latest
+   docker pull ghcr.io/leneffets/awsserver:v1.0.0
+   docker pull ghcr.io/leneffets/awsserver:latest
    ```
 
 ## Setup
