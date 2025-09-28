@@ -1,9 +1,8 @@
 name: Release Pipeline
 
 on:
-  push:
-    tags:
-      - 'v*.*.*' # Nur SemVer Tags (z. B. v1.0.0)
+  release:
+    types: [published]
 
 jobs:
   release:
@@ -16,13 +15,13 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.22
+          go-version: 1.25
 
       - name: Install dependencies
         run: go mod tidy
 
       - name: Build Binary
-        run: CGO_ENABLED=0 go build -ldflags '-extldflags "-static"' -o ./output/awsserver ./cmd/server
+        run: CGO_ENABLED=0 go build -ldflags '-extldflags "-static"' -o awsserver ./cmd/server
 
       - name: Get build architecture
         id: arch
@@ -30,12 +29,24 @@ jobs:
 
       - name: Package Binary
         run: |
-          mkdir -p release
           ARCH=${{ env.ARCH }}
           TAR_NAME="awsserver-linux-${ARCH}.tar.gz"
-          tar -czvf release/${TAR_NAME} -C ./output awsserver
-          echo "RELEASE_FILE=release/${TAR_NAME}" >> $GITHUB_ENV
-    
+          tar -czvf ${TAR_NAME} awsserver
+          echo "RELEASE_FILE=${TAR_NAME}" >> $GITHUB_ENV
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: awsserver-linux-${{ env.ARCH }}
+          path: ${{ env.RELEASE_FILE }}
+
+      - name: Upload artifact to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.RELEASE_FILE }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:

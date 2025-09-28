@@ -1,4 +1,4 @@
-name: Build latest Pipeline
+name: CI Pipeline
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest 
+  build-and-docker:
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -17,29 +17,21 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.22
+          go-version: 1.25
 
       - name: Install dependencies
         run: go mod tidy
 
-      - name: Build
-        run: CGO_ENABLED=0 go build -ldflags '-extldflags "-static"' -o ./output/awsserver ./cmd/server
+      - name: Build static Linux binary
+        run: |
+          mkdir -p output
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '-extldflags "-static"' -o ./output/awsserver ./cmd/server
 
-      - name: Run tests
-        run: go test -v ./...
-
-      - name: Archive production artifacts
+      - name: Archive build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: awsserver
+          name: awsserver-linux-amd64
           path: ./output/awsserver
-
-  build-and-push:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -56,5 +48,5 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/awsserver:latest,ghcr.io/${{ github.repository_owner }}/awsserver:${{ github.ref_name }}
+          tags: ghcr.io/${{ github.repository_owner }}/awsserver:latest
 

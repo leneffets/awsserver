@@ -1,0 +1,17 @@
+{
+  "name": "Go Dev Container",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "target": "builder"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "ms-vscode.go-tools",
+        "eamodio.gitlens"
+      ]
+    }
+  },
+  "forwardPorts": [3000],
+}
