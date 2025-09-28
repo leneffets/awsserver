@@ -7,16 +7,15 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-func GetCallerIdentity(ctx context.Context, sess *session.Session) (*sts.GetCallerIdentityOutput, error) {
-	svc := sts.New(sess)
-	return svc.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+func GetCallerIdentity(ctx context.Context, client *sts.Client) (*sts.GetCallerIdentityOutput, error) {
+	return client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 }
 
-func HandleSTS(w http.ResponseWriter, r *http.Request, sess *session.Session) {
+func HandleSTS(w http.ResponseWriter, r *http.Request, cfg aws.Config) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -25,7 +24,8 @@ func HandleSTS(w http.ResponseWriter, r *http.Request, sess *session.Session) {
 		return
 	}
 
-	results, err := GetCallerIdentity(ctx, sess)
+	client := sts.NewFromConfig(cfg)
+	results, err := GetCallerIdentity(ctx, client)
 	if err != nil {
 		log.Printf("Error fetching caller identity: %v", err)
 		http.Error(w, "Error fetching caller identity", http.StatusInternalServerError)

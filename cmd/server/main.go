@@ -1,11 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/leneffets/awsserver/pkg/ecr"
 	"github.com/leneffets/awsserver/pkg/s3"
 	"github.com/leneffets/awsserver/pkg/ssm"
@@ -13,24 +14,26 @@ import (
 )
 
 func main() {
-	sess := session.Must(session.NewSessionWithOptions(session.Options{
-		SharedConfigState: session.SharedConfigEnable,
-	}))
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Fatalf("unable to load AWS SDK config, %v", err)
+	}
 
 	http.HandleFunc("/ssm", func(w http.ResponseWriter, r *http.Request) {
-		ssm.HandleSSM(w, r, sess)
+		ssm.HandleSSM(w, r, cfg)
 	})
 
 	http.HandleFunc("/s3", func(w http.ResponseWriter, r *http.Request) {
-		s3.HandleS3(w, r, sess)
+		s3.HandleS3(w, r, cfg)
 	})
 
 	http.HandleFunc("/ecr/login", func(w http.ResponseWriter, r *http.Request) {
-		ecr.HandleECRLogin(w, r, sess)
+		ecr.HandleECRLogin(w, r, cfg)
 	})
 
 	http.HandleFunc("/sts", func(w http.ResponseWriter, r *http.Request) {
-		sts.HandleSTS(w, r, sess)
+		sts.HandleSTS(w, r, cfg)
 	})
 
 	port := os.Getenv("PORT")

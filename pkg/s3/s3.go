@@ -8,14 +8,12 @@ import (
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-func GetFromS3(ctx context.Context, sess *session.Session, bucket, key string) (io.ReadCloser, error) {
-	svc := s3.New(sess)
-	output, err := svc.GetObjectWithContext(ctx, &s3.GetObjectInput{
+func GetFromS3(ctx context.Context, client *s3.Client, bucket, key string) (io.ReadCloser, error) {
+	output, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
@@ -25,9 +23,8 @@ func GetFromS3(ctx context.Context, sess *session.Session, bucket, key string) (
 	return output.Body, nil
 }
 
-func PutToS3(ctx context.Context, sess *session.Session, bucket, key string, body io.ReadSeeker) error {
-	svc := s3.New(sess)
-	_, err := svc.PutObjectWithContext(ctx, &s3.PutObjectInput{
+func PutToS3(ctx context.Context, client *s3.Client, bucket, key string, body io.ReadSeeker) error {
+	_, err := client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 		Body:   body,
@@ -35,7 +32,7 @@ func PutToS3(ctx context.Context, sess *session.Session, bucket, key string, bod
 	return err
 }
 
-func HandleS3(w http.ResponseWriter, r *http.Request, sess *session.Session) {
+func HandleS3(w http.ResponseWriter, r *http.Request, cfg aws.Config) {
 	bucket := r.URL.Query().Get("bucket")
 	key := r.URL.Query().Get("key")
 	if bucket == "" || key == "" {
@@ -46,17 +43,19 @@ func HandleS3(w http.ResponseWriter, r *http.Request, sess *session.Session) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	client := s3.NewFromConfig(cfg)
+
 	if r.Method == http.MethodGet {
-		handleGetS3(w, r, sess, bucket, key, ctx)
+		handleGetS3(w, r, client, bucket, key, ctx)
 	} else if r.Method == http.MethodPost {
-		handlePostS3(w, r, sess, bucket, key, ctx)
+		handlePostS3(w, r, client, bucket, key, ctx)
 	} else {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 	}
 }
 
-func handleGetS3(w http.ResponseWriter, r *http.Request, sess *session.Session, bucket, key string, ctx context.Context) {
-	body, err := GetFromS3(ctx, sess, bucket, key)
+func handleGetS3(w http.ResponseWriter, r *http.Request, client *s3.Client, bucket, key string, ctx context.Context) {
+	body, err := GetFromS3(ctx, client, bucket, key)
 	if err != nil {
 		http.Error(w, "Error fetching file from S3", http.StatusInternalServerError)
 		log.Printf("Error fetching file from S3: %v", err)
@@ -72,7 +71,7 @@ func handleGetS3(w http.ResponseWriter, r *http.Request, sess *session.Session, 
 	}
 }
 
-func handlePostS3(w http.ResponseWriter, r *http.Request, sess *session.Session, bucket, key string, ctx context.Context) {
+func handlePostS3(w http.ResponseWriter, r *http.Request, client *s3.Client, bucket, key string, ctx context.Context) {
 	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Error reading uploaded file", http.StatusBadRequest)
@@ -97,7 +96,7 @@ func handlePostS3(w http.ResponseWriter, r *http.Request, sess *session.Session,
 
 	tempFile.Seek(0, 0)
 
-	if err := PutToS3(ctx, sess, bucket, key, tempFile); err != nil {
+	if err := PutToS3(ctx, client, bucket, key, tempFile); err != nil {
 		http.Error(w, "Error uploading file to S3", http.StatusInternalServerError)
 		log.Printf("Error uploading file to S3: %v", err)
 		return

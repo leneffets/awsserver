@@ -8,16 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 )
 
-func GetECRCredentials(ctx context.Context, sess *session.Session) (*ecr.GetAuthorizationTokenOutput, error) {
-	svc := ecr.New(sess)
-	return svc.GetAuthorizationTokenWithContext(ctx, &ecr.GetAuthorizationTokenInput{})
+func GetECRCredentials(ctx context.Context, client *ecr.Client) (*ecr.GetAuthorizationTokenOutput, error) {
+	return client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 }
 
-func HandleECRLogin(w http.ResponseWriter, r *http.Request, sess *session.Session) {
+func HandleECRLogin(w http.ResponseWriter, r *http.Request, cfg aws.Config) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -26,7 +25,8 @@ func HandleECRLogin(w http.ResponseWriter, r *http.Request, sess *session.Sessio
 		return
 	}
 
-	results, err := GetECRCredentials(ctx, sess)
+	client := ecr.NewFromConfig(cfg)
+	results, err := GetECRCredentials(ctx, client)
 	if err != nil {
 		log.Printf("Error fetching ECR credentials: %v", err)
 		http.Error(w, "Error fetching ECR credentials", http.StatusInternalServerError)

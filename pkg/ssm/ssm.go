@@ -6,42 +6,38 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ssm"
-	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 )
 
-func GetParameter(ctx context.Context, svc ssmiface.SSMAPI, name *string) (*ssm.GetParameterOutput, error) {
-	results, err := svc.GetParameterWithContext(ctx, &ssm.GetParameterInput{
-		Name:           name,
+func GetParameter(ctx context.Context, client *ssm.Client, name string) (*ssm.GetParameterOutput, error) {
+	return client.GetParameter(ctx, &ssm.GetParameterInput{
+		Name:           aws.String(name),
 		WithDecryption: aws.Bool(true),
 	})
-	return results, err
 }
-
-func PutParameter(ctx context.Context, svc ssmiface.SSMAPI, name *string, value *string, typeStr *string) (*ssm.PutParameterOutput, error) {
-	results, err := svc.PutParameterWithContext(ctx, &ssm.PutParameterInput{
-		Name:  name,
-		Value: value,
-		Type:  aws.String(*typeStr),
+func PutParameter(ctx context.Context, client *ssm.Client, name, value, typeStr string) (*ssm.PutParameterOutput, error) {
+	return client.PutParameter(ctx, &ssm.PutParameterInput{
+		Name:  aws.String(name),
+		Value: aws.String(value),
+		Type:  types.ParameterType(typeStr),
 	})
-	return results, err
 }
 
-func HandleSSM(w http.ResponseWriter, r *http.Request, sess *session.Session) {
-	svc := ssm.New(sess)
+func HandleSSM(w http.ResponseWriter, r *http.Request, cfg aws.Config) {
+	client := ssm.NewFromConfig(cfg)
 
 	if r.Method == http.MethodGet {
-		handleGetSSM(w, r, svc)
+		handleGetSSM(w, r, client)
 	} else if r.Method == http.MethodPost {
-		HandlePostSSM(w, r, svc)
+		HandlePostSSM(w, r, client)
 	} else {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 	}
 }
 
-func handleGetSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
+func handleGetSSM(w http.ResponseWriter, r *http.Request, client *ssm.Client) {
 	id := r.URL.Query().Get("name")
 	if id == "" {
 		http.Error(w, "Parameter 'name' is required", http.StatusBadRequest)
@@ -51,7 +47,7 @@ func handleGetSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	results, err := GetParameter(ctx, svc, &id)
+	results, err := GetParameter(ctx, client, id)
 	if err != nil {
 		log.Printf("Error fetching parameter: %v", err)
 		http.Error(w, "Error fetching parameter", http.StatusInternalServerError)
@@ -62,7 +58,7 @@ func handleGetSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
 	w.Write([]byte(*results.Parameter.Value))
 }
 
-func HandlePostSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) {
+func HandlePostSSM(w http.ResponseWriter, r *http.Request, client *ssm.Client) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		log.Printf("Invalid form data: %v", err)
@@ -81,7 +77,7 @@ func HandlePostSSM(w http.ResponseWriter, r *http.Request, svc ssmiface.SSMAPI) 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := PutParameter(ctx, svc, &name, &value, &typeStr)
+	_, err := PutParameter(ctx, client, name, value, typeStr)
 	if err != nil {
 		http.Error(w, "Error putting parameter", http.StatusInternalServerError)
 		log.Printf("Error putting parameter: %v", err)
