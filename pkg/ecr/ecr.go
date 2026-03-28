@@ -3,32 +3,35 @@ package ecr
 import (
 	"context"
 	"encoding/base64"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
 )
 
-func GetECRCredentials(ctx context.Context, sess *session.Session) (*ecr.GetAuthorizationTokenOutput, error) {
-	svc := ecr.New(sess)
-	return svc.GetAuthorizationTokenWithContext(ctx, &ecr.GetAuthorizationTokenInput{})
+// ECRAPI defines the interface for ECR operations used by this package.
+type ECRAPI interface {
+	GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error)
 }
 
-func HandleECRLogin(w http.ResponseWriter, r *http.Request, sess *session.Session) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+func GetECRCredentials(ctx context.Context, svc ECRAPI) (*ecr.GetAuthorizationTokenOutput, error) {
+	return svc.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
+}
 
+func HandleECRLogin(w http.ResponseWriter, r *http.Request, svc ECRAPI) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	results, err := GetECRCredentials(ctx, sess)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	results, err := GetECRCredentials(ctx, svc)
 	if err != nil {
-		log.Printf("Error fetching ECR credentials: %v", err)
+		slog.Error("failed to fetch ECR credentials", "error", err)
 		http.Error(w, "Error fetching ECR credentials", http.StatusInternalServerError)
 		return
 	}
@@ -41,7 +44,7 @@ func HandleECRLogin(w http.ResponseWriter, r *http.Request, sess *session.Sessio
 	authData := results.AuthorizationData[0]
 	decodedToken, err := base64.StdEncoding.DecodeString(*authData.AuthorizationToken)
 	if err != nil {
-		log.Printf("Error decoding authorization token: %v", err)
+		slog.Error("failed to decode authorization token", "error", err)
 		http.Error(w, "Error decoding authorization token", http.StatusInternalServerError)
 		return
 	}
@@ -52,12 +55,9 @@ func HandleECRLogin(w http.ResponseWriter, r *http.Request, sess *session.Sessio
 		return
 	}
 
-	password := tokenParts[1]
-
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	if _, err := w.Write([]byte(password)); err != nil {
-		http.Error(w, "Error writing response", http.StatusInternalServerError)
-		log.Printf("Error writing response: %v", err)
+	if _, err := w.Write([]byte(tokenParts[1])); err != nil {
+		slog.Error("failed to write response", "error", err)
 	}
 }
