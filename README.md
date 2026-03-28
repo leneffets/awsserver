@@ -5,60 +5,73 @@ This project provides an HTTP server using Go, which interacts with AWS Services
 ## Features
 
 - Fetch decrypted parameters from AWS SSM.
+- Put parameters to AWS SSM.
+- Fetch secrets from AWS Secrets Manager.
 - Fetch and serve files from AWS S3.
 - Upload files to AWS S3.
 - Fetch ECR authorization token.
 - Fetch caller identity from AWS STS.
-- Basic CI/CD pipeline using GitHub Actions for automatic builds and tests.
+- CI/CD pipeline using GitHub Actions for automatic builds, tests, and container image publishing.
 
 ## Requirements
 
-- Go 1.17 or later
-- AWS CLI configured with necessary permissions
+- Go 1.26 or later
+- AWS credentials configured (e.g. `~/.aws/credentials`, environment variables, or IAM role)
 - Git installed
 
 ## Container Image
 
-Get the Container Image
+```sh
+docker pull ghcr.io/leneffets/awsserver:v2.0.0
+docker pull ghcr.io/leneffets/awsserver:latest
+```
 
-   ```sh
-   docker pull ghcr.io/leneffets/awsserver:v1.0.0
-   docker pull ghcr.io/leneffets/awsserver:latest
-   ```
+The container image uses a `scratch` base (zero OS packages), runs as a non-root user, and is available for `linux/amd64` and `linux/arm64`.
 
 ## Setup
 
 1. **Clone the repository:**
 
     ```sh
-    git clone git@github.com:USERNAME/REPO_NAME.git
-    cd REPO_NAME
+    git clone git@github.com:leneffets/awsserver.git
+    cd awsserver
     ```
 
-2. **Initialize the Go module:**
+2. **Install dependencies:**
 
     ```sh
     go mod tidy
     ```
 
-3. **Configure AWS credentials:**
-
-    Ensure you have AWS credentials configured, typically in `~/.aws/credentials`.
-
 ## Running the Server
 
-To start the HTTP server locally on port 3000, run the following command:
-    
-    # Port may be changed via Environment, default 3000
-    export PORT=3000
-    go run cmd/server/main.go
+The server binds to `0.0.0.0` by default. To start it:
 
+```sh
+# Port may be changed via environment variable, default 3000
+export PORT=3000
+
+# Bind address may be changed, default 0.0.0.0
+export BIND_ADDRESS=127.0.0.1
+
+go run cmd/server/main.go
+```
+
+The server shuts down gracefully on SIGINT/SIGTERM, finishing in-flight requests before stopping.
 
 ## Endpoints
 
-### Fetch SSM Parameter
+### Health Check
 
-Fetch a decrypted parameter from AWS SSM.
+- **URL:** `/healthz`
+- **Method:** `GET`
+- **Example:**
+
+    ```sh
+    curl "http://localhost:3000/healthz"
+    ```
+
+### Fetch SSM Parameter
 
 - **URL:** `/ssm`
 - **Method:** `GET`
@@ -72,23 +85,31 @@ Fetch a decrypted parameter from AWS SSM.
 
 ### Put SSM Parameter
 
-Put a parameter to AWS SSM.
-
 - **URL:** `/ssm`
 - **Method:** `POST`
-- **Query Parameters:**
-  - `name`: Name of the SSM parameter to put.
-  - `value`: Value of the SSM parameter to put.
-  - `type`: Type of the SSM parameter to put. (String, SecureString)
+- **Form Parameters:**
+  - `name`: Name of the SSM parameter.
+  - `value`: Value of the SSM parameter.
+  - `type`: Type of the SSM parameter (`String` or `SecureString`).
 - **Example:**
 
     ```sh
     curl -X POST -d "name=/path/to/parameter&value=somevalue&type=String" http://localhost:3000/ssm
     ```
 
-### Fetch S3 File
+### Fetch Secret from Secrets Manager
 
-Fetch a file from an S3 bucket.
+- **URL:** `/secrets`
+- **Method:** `GET`
+- **Query Parameters:**
+  - `name`: Name or ARN of the secret to fetch.
+- **Example:**
+
+    ```sh
+    curl "http://localhost:3000/secrets?name=my-app/db-credentials"
+    ```
+
+### Fetch S3 File
 
 - **URL:** `/s3`
 - **Method:** `GET`
@@ -103,8 +124,6 @@ Fetch a file from an S3 bucket.
 
 ### Upload S3 File
 
-Upload a file to an S3 bucket.
-
 - **URL:** `/s3`
 - **Method:** `POST`
 - **Query Parameters:**
@@ -118,19 +137,15 @@ Upload a file to an S3 bucket.
 
 ### Get ECR Login
 
-Fetch an authorization token for ECR.
-
 - **URL:** `/ecr/login`
 - **Method:** `GET`
 - **Example:**
 
     ```sh
-    curl "http://localhost:3000/ecr/login" |  docker login --username AWS --password-stdin aws-account-id.dkr.ecr.eu-central-1.amazonaws.com
+    curl "http://localhost:3000/ecr/login" | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
     ```
 
 ### Get Caller Identity
-
-Fetch the caller identity from AWS STS.
 
 - **URL:** `/sts`
 - **Method:** `GET`
@@ -140,25 +155,37 @@ Fetch the caller identity from AWS STS.
     curl "http://localhost:3000/sts"
     ```
 
+## Usage as a GitLab CI Sidecar
+
+This server is designed to run as a sidecar service in GitLab CI, giving your jobs easy access to AWS services without installing the AWS CLI.
+
+```yaml
+my-job:
+  image: alpine:latest
+  services:
+    - name: ghcr.io/leneffets/awsserver:latest
+      alias: awsserver
+  variables:
+    AWS_REGION: eu-central-1
+  script:
+    - SECRET=$(curl -s "http://awsserver:3000/ssm?name=/my-app/db-password")
+    - echo "Fetched secret successfully"
+```
+
+> **Note:** When running as a GitLab CI service, the server is reachable via the `alias` hostname (here `awsserver`) on port 3000. Make sure your AWS credentials are set as [CI/CD variables](https://docs.gitlab.com/ee/ci/variables/) in your project or group settings.
+
 ## Running Tests
 
-To run the tests:
+```sh
+go test -v ./...
+```
 
-    go test -v ./...
+## CI/CD Pipeline
 
-## CI/CD Pipeline with GitHub Actions
+This project uses GitHub Actions with two workflows:
 
-This project uses GitHub Actions for continuous integration. The pipeline is defined in `.github/workflows/ci.yml` and performs the following actions on each push or pull request to the `main` branch:
-
-- Checks out the code.
-- Sets up the Go environment.
-- Installs dependencies.
-- Builds the project.
-- Runs tests.
-
-3. **Review pipeline runs:**
-
-    Go to the `Actions` tab in your GitHub repository to view the status of the workflow runs.
+- **CI Pipeline** (`.github/workflows/ci.yml`): Runs on pushes and PRs to `main`. Checks out code, runs tests, builds a static binary, and pushes a Docker image (`:latest`) on pushes to `main`.
+- **Release Pipeline** (`.github/workflows/release.yml`): Runs on published releases. Builds static binaries for linux/darwin (amd64/arm64), uploads them as release artifacts (`.tar.gz`), and pushes a multi-arch Docker image tagged with the release version.
 
 ## Contribution
 
@@ -167,4 +194,3 @@ Feel free to fork this repository and create pull requests. For major changes, p
 ## License
 
 This project is licensed under the MIT License.
-
