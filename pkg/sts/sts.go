@@ -3,31 +3,34 @@ package sts
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-func GetCallerIdentity(ctx context.Context, sess *session.Session) (*sts.GetCallerIdentityOutput, error) {
-	svc := sts.New(sess)
-	return svc.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+// STSAPI defines the interface for STS operations used by this package.
+type STSAPI interface {
+	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
-func HandleSTS(w http.ResponseWriter, r *http.Request, sess *session.Session) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+func GetCallerIdentity(ctx context.Context, svc STSAPI) (*sts.GetCallerIdentityOutput, error) {
+	return svc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+}
 
+func HandleSTS(w http.ResponseWriter, r *http.Request, svc STSAPI) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	results, err := GetCallerIdentity(ctx, sess)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	results, err := GetCallerIdentity(ctx, svc)
 	if err != nil {
-		log.Printf("Error fetching caller identity: %v", err)
+		slog.Error("failed to fetch caller identity", "error", err)
 		http.Error(w, "Error fetching caller identity", http.StatusInternalServerError)
 		return
 	}
@@ -35,7 +38,6 @@ func HandleSTS(w http.ResponseWriter, r *http.Request, sess *session.Session) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(results); err != nil {
-		http.Error(w, "Error encoding response", http.StatusInternalServerError)
-		log.Printf("Error encoding response: %v", err)
+		slog.Error("failed to encode response", "error", err)
 	}
 }
