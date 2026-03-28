@@ -5,366 +5,305 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
-	"reflect"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ecr"
-	"github.com/aws/aws-sdk-go/service/ecr/ecriface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-	"github.com/aws/aws-sdk-go/service/ssm"
-	"github.com/aws/aws-sdk-go/service/ssm/ssmiface"
-	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/aws/aws-sdk-go/service/sts/stsiface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	ecrpkg "github.com/leneffets/awsserver/pkg/ecr"
+	s3pkg "github.com/leneffets/awsserver/pkg/s3"
+	smpkg "github.com/leneffets/awsserver/pkg/secretsmanager"
 	ssmpkg "github.com/leneffets/awsserver/pkg/ssm"
+	stspkg "github.com/leneffets/awsserver/pkg/sts"
 )
 
-// MockSSMAPI for testing
+// Mock SSM
 type MockSSMAPI struct {
-	ssmiface.SSMAPI
-	Response    ssm.GetParameterOutput
-	PutResponse ssm.PutParameterOutput
-	Err         error
+	GetResp ssm.GetParameterOutput
+	PutResp ssm.PutParameterOutput
+	Err     error
 }
 
-func (m *MockSSMAPI) GetParameterWithContext(ctx context.Context, input *ssm.GetParameterInput, opts ...request.Option) (*ssm.GetParameterOutput, error) {
-	return &m.Response, m.Err
+func (m *MockSSMAPI) GetParameter(ctx context.Context, params *ssm.GetParameterInput, optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+	return &m.GetResp, m.Err
 }
 
-func (m *MockSSMAPI) PutParameterWithContext(ctx context.Context, input *ssm.PutParameterInput, opts ...request.Option) (*ssm.PutParameterOutput, error) {
-	return &m.PutResponse, m.Err
+func (m *MockSSMAPI) PutParameter(ctx context.Context, params *ssm.PutParameterInput, optFns ...func(*ssm.Options)) (*ssm.PutParameterOutput, error) {
+	return &m.PutResp, m.Err
 }
 
-// MockS3API for testing
+// Mock S3
 type MockS3API struct {
-	s3iface.S3API
-	Response s3.GetObjectOutput
-	Err      error
+	GetResp s3.GetObjectOutput
+	Err     error
 }
 
-func (m *MockS3API) GetObjectWithContext(ctx context.Context, input *s3.GetObjectInput, opts ...request.Option) (*s3.GetObjectOutput, error) {
-	return &m.Response, m.Err
+func (m *MockS3API) GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	return &m.GetResp, m.Err
 }
 
-func (m *MockS3API) PutObjectWithContext(ctx context.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error) {
+func (m *MockS3API) PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	return &s3.PutObjectOutput{}, m.Err
 }
 
-// MockECRAPI for testing
+// Mock ECR
 type MockECRAPI struct {
-	ecriface.ECRAPI
-	Response ecr.GetAuthorizationTokenOutput
-	Err      error
+	Resp ecr.GetAuthorizationTokenOutput
+	Err  error
 }
 
-func (m *MockECRAPI) GetAuthorizationTokenWithContext(ctx context.Context, input *ecr.GetAuthorizationTokenInput, opts ...request.Option) (*ecr.GetAuthorizationTokenOutput, error) {
-	return &m.Response, m.Err
+func (m *MockECRAPI) GetAuthorizationToken(ctx context.Context, params *ecr.GetAuthorizationTokenInput, optFns ...func(*ecr.Options)) (*ecr.GetAuthorizationTokenOutput, error) {
+	return &m.Resp, m.Err
 }
 
-// MockSTSAPI for testing
+// Mock STS
 type MockSTSAPI struct {
-	stsiface.STSAPI
-	Response sts.GetCallerIdentityOutput
-	Err      error
+	Resp sts.GetCallerIdentityOutput
+	Err  error
 }
 
-func (m *MockSTSAPI) GetCallerIdentityWithContext(ctx context.Context, input *sts.GetCallerIdentityInput, opts ...request.Option) (*sts.GetCallerIdentityOutput, error) {
-	return &m.Response, m.Err
+func (m *MockSTSAPI) GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
+	return &m.Resp, m.Err
+}
+
+// Mock Secrets Manager
+type MockSMAPI struct {
+	Resp secretsmanager.GetSecretValueOutput
+	Err  error
+}
+
+func (m *MockSMAPI) GetSecretValue(ctx context.Context, params *secretsmanager.GetSecretValueInput, optFns ...func(*secretsmanager.Options)) (*secretsmanager.GetSecretValueOutput, error) {
+	return &m.Resp, m.Err
+}
+
+func TestHealthz(t *testing.T) {
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rr := httptest.NewRecorder()
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
+	}
+	if rr.Body.String() != "ok" {
+		t.Errorf("got %v want ok", rr.Body.String())
+	}
 }
 
 func TestGetParameter(t *testing.T) {
-	mockSvc := &MockSSMAPI{
-		Response: ssm.GetParameterOutput{
-			Parameter: &ssm.Parameter{
-				Value: aws.String("mock_value"),
-			},
+	mock := &MockSSMAPI{
+		GetResp: ssm.GetParameterOutput{
+			Parameter: &ssmtypes.Parameter{Value: aws.String("mock_value")},
 		},
 	}
 
-	req, err := http.NewRequest("GET", "/ssm?name=mock_name", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req := httptest.NewRequest("GET", "/ssm?name=mock_name", nil)
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.URL.Query().Get("name")
-		if id == "" {
-			http.Error(w, "Parameter 'name' is required", http.StatusBadRequest)
-			return
-		}
+	ssmpkg.HandleSSM(rr, req, mock)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		results, err := ssmpkg.GetParameter(ctx, mockSvc, &id)
-		if err != nil {
-			http.Error(w, "Error fetching parameter", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(*results.Parameter.Value))
-	})
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
 	}
-
-	expected := "mock_value"
-	if rr.Body.String() != expected {
-		t.Errorf("Handler returned unexpected body: got %v want %v", rr.Body.String(), expected)
+	if rr.Body.String() != "mock_value" {
+		t.Errorf("got %v want mock_value", rr.Body.String())
 	}
 }
 
 func TestPutParameter(t *testing.T) {
-	mockSvc := &MockSSMAPI{}
+	mock := &MockSSMAPI{}
 
 	form := url.Values{}
 	form.Add("name", "mock_name")
 	form.Add("value", "mock_value")
 	form.Add("type", "String")
 
-	req, err := http.NewRequest("POST", "/ssm", strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
+	req := httptest.NewRequest("POST", "/ssm", strings.NewReader(form.Encode()))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ssmpkg.HandlePostSSM(w, r, mockSvc)
-	})
+	ssmpkg.HandleSSM(rr, req, mock)
 
-	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
+	}
+}
 
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+func TestPutParameterInvalidType(t *testing.T) {
+	mock := &MockSSMAPI{}
+
+	form := url.Values{}
+	form.Add("name", "mock_name")
+	form.Add("value", "mock_value")
+	form.Add("type", "InvalidType")
+
+	req := httptest.NewRequest("POST", "/ssm", strings.NewReader(form.Encode()))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	rr := httptest.NewRecorder()
+	ssmpkg.HandleSSM(rr, req, mock)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("got %v want %v", rr.Code, http.StatusBadRequest)
 	}
 }
 
 func TestGetFromS3(t *testing.T) {
-	mockS3 := &MockS3API{
-		Response: s3.GetObjectOutput{
-			Body: ioutil.NopCloser(bytes.NewReader([]byte("mock_file_content"))),
+	mock := &MockS3API{
+		GetResp: s3.GetObjectOutput{
+			Body: io.NopCloser(bytes.NewReader([]byte("mock_file_content"))),
 		},
 	}
 
-	req, err := http.NewRequest("GET", "/s3?bucket=mock_bucket&key=mock_key", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req := httptest.NewRequest("GET", "/s3?bucket=mock_bucket&key=mock_key", nil)
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bucket := r.URL.Query().Get("bucket")
-		key := r.URL.Query().Get("key")
-		if bucket == "" || key == "" {
-			http.Error(w, "Parameters 'bucket' and 'key' are required", http.StatusBadRequest)
-			return
-		}
+	s3pkg.HandleS3(rr, req, mock)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		body, err := mockS3.GetObjectWithContext(ctx, &s3.GetObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-		})
-		if err != nil {
-			http.Error(w, "Error fetching file from S3", http.StatusInternalServerError)
-			return
-		}
-		defer body.Body.Close()
-
-		w.Header().Set("Content-Type", "application/octet-stream")
-		if _, err := io.Copy(w, body.Body); err != nil {
-			http.Error(w, "Error sending file", http.StatusInternalServerError)
-			return
-		}
-	})
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
 	}
-
-	expected := "mock_file_content"
-	if rr.Body.String() != expected {
-		t.Errorf("Handler returned unexpected body: got %v want %v", rr.Body.String(), expected)
+	if rr.Body.String() != "mock_file_content" {
+		t.Errorf("got %v want mock_file_content", rr.Body.String())
 	}
 }
 
 func TestPutToS3(t *testing.T) {
-	mockS3 := &MockS3API{}
+	mock := &MockS3API{}
 
-	fileContent := "mock_file_content"
-	file := ioutil.NopCloser(bytes.NewReader([]byte(fileContent)))
-
-	req, err := http.NewRequest("POST", "/s3?bucket=mock_bucket&key=mock_key", file)
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", "test.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
+	part.Write([]byte("mock_file_content"))
+	writer.Close()
 
+	req := httptest.NewRequest("POST", "/s3?bucket=mock_bucket&key=mock_key", &buf)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bucket := r.URL.Query().Get("bucket")
-		key := r.URL.Query().Get("key")
-		if bucket == "" || key == "" {
-			http.Error(w, "Parameters 'bucket' and 'key' are required", http.StatusBadRequest)
-			return
-		}
+	s3pkg.HandleS3(rr, req, mock)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		// Convert io.ReadCloser to io.ReadSeeker
-		readSeeker := bytes.NewReader([]byte(fileContent))
-
-		_, err = mockS3.PutObjectWithContext(ctx, &s3.PutObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-			Body:   readSeeker,
-		})
-		if err != nil {
-			http.Error(w, "Error uploading file to S3", http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
 	}
 }
 
 func TestGetECRLogin(t *testing.T) {
-	mockECR := &MockECRAPI{
-		Response: ecr.GetAuthorizationTokenOutput{
-			AuthorizationData: []*ecr.AuthorizationData{
+	mock := &MockECRAPI{
+		Resp: ecr.GetAuthorizationTokenOutput{
+			AuthorizationData: []ecrtypes.AuthorizationData{
 				{
-					AuthorizationToken: aws.String("mock_token"),
+					AuthorizationToken: aws.String("QVdTOm1vY2tfcGFzc3dvcmQ="),
 					ProxyEndpoint:      aws.String("https://mock_endpoint"),
 				},
 			},
 		},
 	}
 
-	req, err := http.NewRequest("GET", "/ecr/login", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req := httptest.NewRequest("GET", "/ecr/login", nil)
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	ecrpkg.HandleECRLogin(rr, req, mock)
 
-		result, err := mockECR.GetAuthorizationTokenWithContext(ctx, &ecr.GetAuthorizationTokenInput{})
-		if err != nil {
-			http.Error(w, "Error fetching ECR authorization token", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
-	})
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
 	}
-
-	expected := ecr.GetAuthorizationTokenOutput{
-		AuthorizationData: []*ecr.AuthorizationData{
-			{
-				AuthorizationToken: aws.String("mock_token"),
-				ProxyEndpoint:      aws.String("https://mock_endpoint"),
-				ExpiresAt:          nil,
-			},
-		},
-	}
-
-	var actual ecr.GetAuthorizationTokenOutput
-	if err := json.Unmarshal(rr.Body.Bytes(), &actual); err != nil {
-		t.Fatalf("Failed to unmarshal response body: %v", err)
-	}
-
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Handler returned unexpected body: got %v want %v", actual, expected)
+	if rr.Body.String() != "mock_password" {
+		t.Errorf("got %v want mock_password", rr.Body.String())
 	}
 }
 
 func TestGetCallerIdentity(t *testing.T) {
-	mockSTS := &MockSTSAPI{
-		Response: sts.GetCallerIdentityOutput{
+	mock := &MockSTSAPI{
+		Resp: sts.GetCallerIdentityOutput{
 			Account: aws.String("mock_account"),
 			Arn:     aws.String("mock_arn"),
 			UserId:  aws.String("mock_user_id"),
 		},
 	}
 
-	req, err := http.NewRequest("GET", "/sts", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	req := httptest.NewRequest("GET", "/sts", nil)
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	stspkg.HandleSTS(rr, req, mock)
 
-		result, err := mockSTS.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
-		if err != nil {
-			http.Error(w, "Error fetching caller identity", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
-	})
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("Handler returned wrong status code: got %v want %v", status, http.StatusOK)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
 	}
 
-	expected := sts.GetCallerIdentityOutput{
-		Account: aws.String("mock_account"),
-		Arn:     aws.String("mock_arn"),
-		UserId:  aws.String("mock_user_id"),
+	var result map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &result); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
+	if result["Account"] != "mock_account" {
+		t.Errorf("got Account=%v want mock_account", result["Account"])
+	}
+}
+
+func TestGetSecret(t *testing.T) {
+	mock := &MockSMAPI{
+		Resp: secretsmanager.GetSecretValueOutput{
+			SecretString: aws.String("super_secret"),
+		},
 	}
 
-	var actual sts.GetCallerIdentityOutput
-	if err := json.Unmarshal(rr.Body.Bytes(), &actual); err != nil {
-		t.Fatalf("Failed to unmarshal response body: %v", err)
-	}
+	req := httptest.NewRequest("GET", "/secrets?name=my-secret", nil)
+	rr := httptest.NewRecorder()
+	smpkg.HandleSecrets(rr, req, mock)
 
-	if !reflect.DeepEqual(actual, expected) {
-		t.Errorf("Handler returned unexpected body: got %v want %v", actual, expected)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %v want %v", rr.Code, http.StatusOK)
+	}
+	if rr.Body.String() != "super_secret" {
+		t.Errorf("got %v want super_secret", rr.Body.String())
+	}
+}
+
+func TestMethodNotAllowed(t *testing.T) {
+	mock := &MockSSMAPI{}
+	req := httptest.NewRequest("DELETE", "/ssm", nil)
+	rr := httptest.NewRecorder()
+	ssmpkg.HandleSSM(rr, req, mock)
+
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("got %v want %v", rr.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestMissingParameters(t *testing.T) {
+	mock := &MockSSMAPI{}
+	req := httptest.NewRequest("GET", "/ssm", nil)
+	rr := httptest.NewRecorder()
+	ssmpkg.HandleSSM(rr, req, mock)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("got %v want %v", rr.Code, http.StatusBadRequest)
+	}
+}
+
+func TestS3MissingParameters(t *testing.T) {
+	mock := &MockS3API{}
+	req := httptest.NewRequest("GET", "/s3", nil)
+	rr := httptest.NewRecorder()
+	s3pkg.HandleS3(rr, req, mock)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("got %v want %v", rr.Code, http.StatusBadRequest)
 	}
 }
 
 func TestMain(m *testing.M) {
 	os.Setenv("PORT", "3000")
-	code := m.Run()
-	os.Exit(code)
+	os.Exit(m.Run())
 }
